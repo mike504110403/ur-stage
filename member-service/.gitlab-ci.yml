@@ -1,0 +1,91 @@
+stages:
+  - test
+  - build
+  - publish
+  - deploy
+
+# go test??
+run-tests:
+  stage: test
+  tags:
+    - aws
+  script:
+    - echo "test gitlab runner haha"
+
+# docker build
+build-docker-image:
+  stage: build
+  only:
+    - develop
+  tags:
+    - aws
+  needs:
+    - run-tests
+  script:
+    - echo "runner on aws"
+    - docker build --build-arg MODULES_TOKEN=$MODULES_TOKEN -t $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID .
+    - docker tag $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID $CI_REGISTRY_IMAGE:Build$CI_PIPELINE_IID
+    - docker tag $CI_REGISTRY_IMAGE:$CI_PIPELINE_IID member_image:latest
+    - docker save $CI_REGISTRY_IMAGE:Build$CI_PIPELINE_IID -o image.tar
+    - docker save member_image:latest -o member_image.tar
+  artifacts:
+    paths:
+      - image.tar
+      - member_image.tar
+    expire_in: 1 hour
+
+# oublish to gitlab registory
+push-to-registory:
+  stage: publish
+  only:
+    - develop
+  tags:
+    - aws
+  needs:
+    - build-docker-image
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 hour
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "push registry"
+    - docker load -i image.tar
+    - docker push $CI_REGISTRY_IMAGE:Build$CI_PIPELINE_IID
+    - docker tag $CI_REGISTRY_IMAGE:Build$CI_PIPELINE_IID $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:latest
+
+# deploy to aws machine
+deploy_to_aws:
+  stage: deploy
+  only:
+    - develop
+  tags:
+    - aws
+  needs:
+    - push-to-registory
+  before_script:
+    - cat $AWS_PRIVATE_KEY > private_key.pem
+    - chmod 400 private_key.pem
+  script:
+    - echo "Deploying to AWS"
+    - scp -i private_key.pem -o StrictHostKeyChecking=no ./docker-compose.yml $AWS_USER@$AWS_SERVER:/home/ec2-user
+    # docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY} &&
+    - ssh -o StrictHostKeyChecking=no -i private_key.pem $AWS_USER@$AWS_SERVER "
+      export COMPOSE_PROJECT_NAME=member &&
+      export Port=8080 &&
+      export Environment=dev &&
+      export jwtSecretkey=$jwtSecretkey &&
+      export MYSQL_USERNAME=$MYSQL_USERNAME &&
+      export MYSQL_PASSWORD=$MYSQL_PASSWORD &&
+      export MYSQL_HOST=$MYSQL_HOST &&
+      export REDIS_SERVER=$REDIS_SERVER &&
+      export REDIS_PASSWORD=$REDIS_PASSWORD &&
+      export GAME_SERVER=$GAME_SERVER &&
+      export WALLET_SERVER=$WALLET_SERVER &&
+      export SMTP_URL=$SMTP_URL &&
+      export APP_PORT=8080 &&
+      docker compose down &&
+      docker compose up -d
+      "

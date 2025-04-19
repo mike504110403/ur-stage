@@ -1,0 +1,6 @@
+.dockerignore
+Dockerfile
+.vscode/
+.gitlab-ci.yml
+README.md
+.git/

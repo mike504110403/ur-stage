@@ -1,0 +1,20 @@
+services:
+  service:
+    image: registry.gitlab.com/gogogo2712128/bc-backend/event_service:latest
+    environment:
+      - MYSQL_USERNAME=${MYSQL_USERNAME}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - REDIS_SERVER=${REDIS_SERVER}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - Environment=${Environment}
+      - Port=${Port}
+      - MYSQL_URL
+    ports:
+      - ${APP_PORT}:3003
+    networks:
+      - bc-network
+    restart: always
+networks:
+  bc-network:
+    external: true
